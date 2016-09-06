@@ -330,9 +330,4 @@ def downloadFiles(file_ids):
         with open(os.path.join(download_dir, response.info()['Content-Disposition'].split('"')[1]), 'w') as local_file:
             local_file.write(response.read())
         local_file.close()
-       
-       
-        
-
-updateHiev(file_ids=['197', '198'], description='this has been updated using the API across multiple files')
 
