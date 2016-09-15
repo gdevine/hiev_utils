@@ -1,7 +1,16 @@
 ''' 
 Utility functions for interfacing with the HIEv application
 
-Author: Gerry Devine
+Functions available: 
+searchHIEv - Return a list of full file records (or their IDs) matching a set of input search parameters.
+updateHIEv - Update a list of file metadata records (or their IDs).
+uploadToHIEv - Upload a single file with associated metadata into the HIEv application.
+getLatestFile - Return a single (or most recent) file from HIEv.
+getUserDetails - Return details of a single HIEv user.
+downloadFromHIEv - Downloads hiev files identified by file ID to a local dated directory
+
+
+Author: Gerry Devine, Hawkesbury Institute for the Environment
 '''
 
 
@@ -10,38 +19,42 @@ import urllib2
 import requests
 import json
 import time
-
+from datetime import date, datetime, timedelta
+import re
+import shutil
+    
 
 # BASE_URL = 'https://hiev.uws.edu.au/'
 BASE_URL = 'https://ic2-diver-staging-vm.intersect.org.au/'
-# AUTH_TOKEN = os.environ['HIEV_API_KEY']
-AUTH_TOKEN = os.environ['STAGING_HIEV_API_KEY']
+# auth_token = os.environ['HIEV_API_KEY']
+auth_token = os.environ['STAGING_HIEV_API_KEY']
 
 
-def searchHiev(full_records         = True,
-                from_date           = '',
-                to_date             = '',
-                filename            = '',
-                description         = '',
-                file_id             = '',
-                id                  = '',
-                stati               = None,
-                automation_stati    = None,
-                access_rights_types = None,
-                file_formats        = None,
-                published           = None,
-                unpublished         = None,
-                published_date      = None,
-                tags                = None,
-                labels              = None,
-                grant_numbers       = None,
-                related_websites    = None,
-                facilities          = None,
-                experiments         = None, 
-                variables           = None,
-                uploader_id         = '',
-                upload_from_date    = '',
-                upload_to_date      = ''):
+def searchHiev(auth_token           = None,
+               full_records         = True,
+               from_date           = '',
+               to_date             = '',
+               filename            = '',
+               description         = '',
+               file_id             = '',
+               id                  = '',
+               stati               = None,
+               automation_stati    = None,
+               access_rights_types = None,
+               file_formats        = None,
+               published           = None,
+               unpublished         = None,
+               published_date      = None,
+               tags                = None,
+               labels              = None,
+               grant_numbers       = None,
+               related_websites    = None,
+               facilities          = None,
+               experiments         = None, 
+               variables           = None,
+               uploader_id         = '',
+               upload_from_date    = '',
+               upload_to_date      = ''):
 
     '''
     Return a list of full file records (or their IDs) matching a set of input search parameters
@@ -88,7 +101,7 @@ def searchHiev(full_records         = True,
     
     # -- Set up the http search request and handle the returned response
     request_headers = {'Content-Type' : 'application/json; charset=UTF-8', 'X-Accept': 'application/json'}
-    request_data = json.dumps({ 'auth_token'          : AUTH_TOKEN, 
+    request_data = json.dumps({ 'auth_token'          : auth_token, 
                                 'experiments'         : experiments, 
                                 'filename'            : filename,
                                 'from_date'           : from_date,
@@ -129,30 +142,29 @@ def searchHiev(full_records         = True,
             ids.append(rec['file_id'])
             
         return ids 
+        
     
-    
-    
-def updateHiev(file_ids                           = None,
-                name                              = None,
-                experiment_id                     = None,
-                description                       = None,
-                tag_names                         = None,
-                parent_filenames                  = None,
-                label_names                       = None,
-                creator_email                     = None,
-                contributors_names                = None,
-                title                             = None,
-                grant_numbers                     = None,
-                related_websites                  = None,
-                access_rights_types               = None,
-                license                           = None,
-                access                            = None,
-                access_to_all_institutional_users = None,
-                access_to_user_groups             = None,
-                access_groups                     = None,
-                start_time                        = None,
-                end_time                          = None
-                ):
+def updateHiev(auth_token                        = None,
+               file_ids                          = None,
+               name                              = None,
+               experiment_id                     = None,
+               description                       = None,
+               tag_names                         = None,
+               parent_filenames                  = None,
+               label_names                       = None,
+               creator_email                     = None,
+               contributors_names                = None,
+               title                             = None,
+               grant_numbers                     = None,
+               related_websites                  = None,
+               access_rights_types               = None,
+               license                           = None,
+               access                            = None,
+               access_to_all_institutional_users = None,
+               access_to_user_groups             = None,
+               access_groups                     = None,
+               start_time                        = None,
+               end_time                          = None ):
 
     '''
     Update a list of file metadata records (or their IDs)
@@ -191,7 +203,7 @@ def updateHiev(file_ids                           = None,
      
     '''
     
-    update_url = BASE_URL + 'data_files/api_update?auth_token=' + AUTH_TOKEN
+    request_url = BASE_URL + 'data_files/api_update?auth_token=' + auth_token
 
     #Pass the file id to the update API as well as the updated metadata
     for file_id in file_ids:
@@ -219,21 +231,122 @@ def updateHiev(file_ids                           = None,
         }
         requests.packages.urllib3.disable_warnings()   # ignore ssl warnings from python 2.7.5
         # Update current file with the new file metadata
-        r = requests.post(update_url, data=payload, verify=False)
+        r = requests.post(request_url, data=payload, verify=False)
 
         if r.status_code != 200:
             print 'ERROR - There was a problem updating the file in HIEv'
     
     
     
+    
+def uploadToHIEv(auth_token                         = None,
+                 experiment_id                      = None,
+                 type                               = None,
+                 file                               = None,
+                 description                        = None,
+                 tag_names                          = None,
+                 parent_filenames                   = None,
+                 label_names                        = None,
+                 creator_email                      = None,
+                 contributor_names                  = None,
+                 access                             = None,
+                 access_to_all_institutional_users  = None,
+                 access_to_user_groups              = None,
+                 access_groups                      = None,
+                 grant_numbers                      = None,
+                 related_websites                   = None,
+                 start_time                         = None,
+                 end_time                           = None ): 
+    '''
+    Upload a single file with associated metadata into the HIEv application.
+    See https://github.com/IntersectAustralia/dc21-doc/blob/master/File_Upload_API.md
+    
+    Input
+    -----
+    Mandatory POST parameters:
+    auth_token: API token string 
+        experiment_id (or org_level2_id) - the numeric ID of the experiment this file belongs to - you can find the numeric ID on the 'view experiment page'
+        type - the type of file, one of UNKNOWN, RAW, CLEANSED, PROCESSED defined in DC21
+        file - full local path to the actual file
+    Optional POST parameters:
+        description - a description of the file
+        tag_names - a quoted, comma separated list of tags to apply to the file, must be from the set of legal tag names
+        parent_filenames - an array of parent file names, which must exist on the server prior to upload
+        label_names - a quoted, comma separated list of labels to apply to the file
+        creator_email - a string of creator's email to apply to the file, must be from the email list of approved users
+        contributor_names - a string array of contributors to apply to the file
+        access - access level for the file is either 'Public' or 'Private' (default is 'Private' unless otherwise specified)
+        access_to_all_institutional_users - an option for private access for Institutional Users, which can be set either true or false
+        access_to_user_groups - an option for private access for certain groups of users, which can be set to true or false
+        access_groups - an array of names of access groups, which must exist on the server prior to upload
+        start_time - The start time to use if one could not be extracted from the file's metadata. Must be in the format 'yyyy-mm-dd hh:mm:ss'
+        end_time - The end time to use if one could not be extracted from the file's metadata. Must be in the format 'yyyy-mm-dd hh:mm:ss'
+        
+    Returns
+    -------
+    Nothing. File uploaded to HIEv 
+    
+    Example
+    -------
+    uploadToHIEv(experiment_id     = 2,
+                 type              = 'RAW',
+                 file              = '/Users/gerard/dev/python/hiev_utils/Data/For_Upload/test_data.txt',
+                 description       = 'This is a description of my uploaded data',
+                 creator_email     = 'g.devine@uws.edu.au',
+                 contributor_names = ['Tom Smith, t.smith@google.com', 'Jane White, J.White@aol.com', 'Frank Blank, f.black@yahoo.com'],
+                 label_names       = '"Rainfall","Environment","TOA5"',
+                 grant_numbers     = '"ZXY7654","PRQ53422"',
+                 related_websites  = '"http://www.bom.org.au","http://www.westernsydney.edu.au"',
+                 start_time        = '2014-01-01 12:11:10',
+                 end_time          = '2014-12-30 14:09:08')
+   
+    '''
+  
+    # Append api token to base URL to generate full HIEv upload API request  
+    request_url = BASE_URL + 'data_files/api_create?auth_token='+auth_token
+           
+    # load the file for uploading via the HIEv API
+    files = {'file': open(file, 'rb')}
+          
+    # Compile available metadata 
+    payload = {'type'                               : type, 
+               'experiment_id'                      : experiment_id, 
+               'start_time'                         : start_time, 
+               'end_time'                           : end_time, 
+               'description'                        : description,
+               'label_names'                        : label_names,
+               'creator_email'                      : creator_email,
+               'contributor_names[]'                : contributor_names,
+               'tag_names'                          : tag_names,                       
+               'parent_filenames'                   : parent_filenames,                
+               'access'                             : access,                          
+               'access_to_all_institutional_users'  : access_to_all_institutional_users,
+               'access_to_user_groups'              : access_to_user_groups,           
+               'access_groups'                      : access_groups,                   
+               'grant_numbers'                      : grant_numbers,                   
+               'related_websites'                   : related_websites,                
+               'start_time'                         : start_time,                      
+               'end_time'                           : end_time,                        
+               }
+    
+    # Upload file and associated metadata to HIEv
+    requests.packages.urllib3.disable_warnings()   # ignore ssl warnings from python 2.7.5
+    r = requests.post(request_url, files=files, data=payload, verify=False)
+    
+    # Print the outcome of the upload
+    if r.status_code != 200:
+        print 'ERROR - There was a problem uploading the file to HIEv'
 
-def getLatestFile(filename):
+
+
+def getLatestFile(auth_token=None, filename):
     ''' 
     Return a single file from HIEv. If the filename supplied matches multiple 
     files, the most recent file will be returned.
     
     Input
     -----
+    auth_token: API token string 
     Filename: string
     
     Returns
@@ -245,7 +358,7 @@ def getLatestFile(filename):
     
     # --Set up the http request
     request_headers = {'Content-Type' : 'application/json; charset=UTF-8', 'X-Accept': 'application/json'}
-    request_data = json.dumps({'auth_token': AUTH_TOKEN, 
+    request_data = json.dumps({'auth_token': auth_token, 
                                'filename': filename})
     
     # --Handle the returned response from the HIEv server
@@ -256,19 +369,20 @@ def getLatestFile(filename):
     
     # --Grab the latest - in those cases where there are multiple results returned
     latest_file = (sorted(js, key=lambda k: k['updated_at'], reverse=True))[0] 
-    download_url = latest_file['url']+'?'+'AUTH_TOKEN=%s' %AUTH_TOKEN
+    download_url = latest_file['url']+'?'+'auth_token=%s' %auth_token
     request = urllib2.Request(download_url)
     
     return urllib2.urlopen(request)
     
 
 
-def getUserDetails(user_id):
+def getUserDetails(auth_token = None, user_id):
     ''' 
     Return details of a single HIEv user
     
     Input
     -----
+    auth_token: API token string 
     user_id : Integer value representing user ID in HIEv
     
     Returns
@@ -293,12 +407,13 @@ def getUserDetails(user_id):
 
 
 
-def downloadFiles(file_ids):
+def downloadFromHIEv(auth_token = None, file_ids):
     '''
-    Downloads hiev files identified by file ID to a local dated directory
+    Downloads hiev files identified by file ID to a local (datestamped) directory
     
     Input
     -----
+    auth_token: API token string 
     array of HIEv file IDs in HIEv
     
     Returns
@@ -307,12 +422,12 @@ def downloadFiles(file_ids):
     
     '''
     
-    download_dir = os.path.join(os.getcwd(), 'data_downloads', time.strftime("%Y%m%d"))
+    download_dir = os.path.join(os.getcwd(), 'Data','For_Download', time.strftime("%Y%m%d"))
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
     for file_id in file_ids: 
-        download_url = BASE_URL+'data_files/'+file_id+'/download.json?'+'auth_token=%s' %AUTH_TOKEN
-        request = urllib2.Request(download_url)
+        request_url = BASE_URL+'data_files/'+file_id+'/download.json?'+'auth_token=%s' %auth_token
+        request = urllib2.Request(request_url)
         
         try: 
             response = urllib2.urlopen(request)
@@ -330,4 +445,3 @@ def downloadFiles(file_ids):
         with open(os.path.join(download_dir, response.info()['Content-Disposition'].split('"')[1]), 'w') as local_file:
             local_file.write(response.read())
         local_file.close()
-
